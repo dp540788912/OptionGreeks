@@ -1,6 +1,6 @@
 import pickle
-from BS_model import *
-from toolkit import *
+from BSmodel import *
+from BSmodel.toolkit import *
 import rqdatac
 
 rqdatac.init('rice', 'rice', ('192.168.0.241', 16010))

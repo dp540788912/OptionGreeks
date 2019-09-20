@@ -4,7 +4,7 @@ from datetime import datetime
 from datetime import timedelta
 from scipy.stats import norm
 import time
-from root_finding_algorithms import *
+from BSmodel.root_finding_algorithms import *
 import rqdatac
 
 rqdatac.init('quant', 'quant123', ('172.18.0.17', 16010))
@@ -273,14 +273,14 @@ def get_implied_volatility(option_price, underlying_price, strike_price, risk_fr
     implied_volatility = pd.Series(index=option_price.index)
     brent_status = pd.Series(index=option_price.index)
 
-    for id in option_price.index.tolist():
-        current_underlying_price = underlying_price.loc[id]
-        current_strike_price = strike_price.loc[id]
-        current_dividend = dividend_yield.loc[id]
-        current_time_to_maturity = time_to_maturity.loc[id]
-        target_price = option_price.loc[id]
-        current_risk_free = risk_free_rate.loc[id]
-        option_type = rqdatac.instruments(id).option_type
+    for my_id in option_price.index.tolist():
+        current_underlying_price = underlying_price.loc[my_id]
+        current_strike_price = strike_price.loc[my_id]
+        current_dividend = dividend_yield.loc[my_id]
+        current_time_to_maturity = time_to_maturity.loc[my_id]
+        target_price = option_price.loc[my_id]
+        current_risk_free = risk_free_rate.loc[my_id]
+        option_type = rqdatac.instruments(my_id).option_type
 
         lower_bound = 0
         upper_bound = 2
@@ -298,6 +298,6 @@ def get_implied_volatility(option_price, underlying_price, strike_price, risk_fr
         #     d1 = get_d1(current_underlying_price, current_strike_price, current_risk_free, current_dividend, volatility, current_time_to_maturity)
         #     return current_underlying_price * np.exp(-current_dividend * current_time_to_maturity) * np.sqrt(current_time_to_maturity) * np.exp(-pow(d1, 2) / 2) / np.sqrt(2 * np.pi)
 
-        implied_volatility.loc[id], brent_status.loc[id] = brent_iteration(_target_function, lower_bound, upper_bound, max_iteration, tol)
+        implied_volatility.loc[my_id], brent_status.loc[my_id] = brent_iteration(_target_function, lower_bound, upper_bound, max_iteration, tol)
 
     return implied_volatility, brent_status
