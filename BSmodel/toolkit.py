@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from root_finding_algorithms import *
+from BSmodel.root_finding_algorithms import *
 from interpolation import *
 import rqdatac
 
