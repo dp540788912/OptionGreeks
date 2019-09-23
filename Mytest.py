@@ -32,7 +32,7 @@ rqdatac.init('rice', 'rice', ('192.168.10.34', 16012))
 ins = object()
 try:
     ins = rqdatac.all_instruments(type='Option')
-except ConnectionAbortedError:
+except :
     print('connection error')
     exit()
 
