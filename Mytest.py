@@ -1,12 +1,13 @@
 from datetime import datetime
 
-from BSmodel import *
+from BSmodel_modified.BS_model import *
 import rqdatac
 import numpy
 import pandas as pd
 import math
 import datetime as dt
 from rqanalysis.risk import get_risk_free_rate
+import timeit
 
 pd.set_option('display.max_columns', None)
 rqdatac.init('rice', 'rice', ('dev', 16010))
@@ -48,7 +49,8 @@ def get_basic_information() -> pd.DataFrame:
     :return: pandas dataframe, index[ nan ]: [[], [], .... ]
     """
     _partial_param_list = object()
-    necessary = ['order_book_id', 'strike_price', 'underlying_order_book_id', 'maturity_date', 'listed_date']
+    necessary = ['order_book_id', 'strike_price', 'underlying_order_book_id', 'maturity_date', 'listed_date',
+                 'option_type']
     try:
         _partial_param_list = rqdatac.all_instruments(type='Option')[necessary]
     except ConnectionAbortedError:
@@ -56,7 +58,8 @@ def get_basic_information() -> pd.DataFrame:
         exit()
     _partial_param_list['maturity_date'] = _partial_param_list['maturity_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
-    _partial_param_list['listed_date'] = _partial_param_list['listed_date'].apply(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+    _partial_param_list['listed_date'] = _partial_param_list['listed_date'].apply(
+        lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
     return _partial_param_list
 
 
@@ -87,12 +90,16 @@ def get_risk_free_series(_date, order_id):
 
 
 def get_date2maturity(_partial, _date):
-    value_list = map(lambda x: (x - _date).days/365, _partial['maturity_date'].tolist())
+    value_list = map(lambda x: (x - _date).days / 365, _partial['maturity_date'].tolist())
     return pd.Series(value_list, index=_partial['order_book_id'].tolist())
 
 
 def get_dividend(_partial):
-    return pd.Series(0, index=_partial['order_book_id'])
+    return pd.Series(0, index=_partial['order_book_id'].tolist())
+
+
+def get_type(_partial):
+    return pd.Series(_partial['option_type'].tolist(), _partial['order_book_id'].tolist())
 
 
 def get_underlying_price(_partial, _date):
@@ -103,14 +110,14 @@ def get_underlying_price(_partial, _date):
         return None
     else:
         distinct_price = distinct_price['close'].reset_index(level=1, drop=True)
-
     print(distinct_price)
     # [index = underlying id]: [price] series
     # to [ option id ]: [ value ]
-    tmp_series = pd.Series(0, index=_partial['order_book_id'].tolist())
-    _map = pd.Series(_partial['underlying_order_book_id'], index=_partial['order_book_id'].tolist())
+    tmp_series = pd.Series(0.0, index=_partial['order_book_id'].tolist())
+    _map = pd.Series(_partial['underlying_order_book_id'].tolist(), index=_partial['order_book_id'].tolist())
+
     for n in tmp_series.index:
-        tmp_series[n] = distinct_price[map[n]]
+        tmp_series[n] = distinct_price[_map[n]]
     return tmp_series
 
 
@@ -120,37 +127,68 @@ def get_trading_dates_all_option(partial_param_list_1, end_date):
     :param end_date: datetime, the end date
     :return:
     """
-    all_listed_date = list(map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), partial_param_list_1['listed_date']))
+    all_listed_date = list(
+        map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), partial_param_list_1['listed_date']))
     earliest_list_date = min(all_listed_date)
     # get trading date
     trading_dates = rqdatac.get_trading_dates(earliest_list_date, end_date)
     return trading_dates
 
 
-def get_all_para_ready(_date):
-
-    partial_ = get_basic_information()
+def get_all_para_ready(partial_, _date):
     # data frame
     options_on_market_info = filter_options(_date, partial_)
 
     # get option price
     option_price = get_option_price_each_day(_date, options_on_market_info['order_book_id'].tolist())
     # get risk free rate
-    rf_series = get_risk_free_series(_date, partial_['order_book_id'].tolist())
+    rf_series = get_risk_free_series(_date, options_on_market_info['order_book_id'].tolist())
     # get strike_price
-    sp_series = pd.Series(partial_['strike_price'], index=partial_['order_book_id'].tolist())
+    sp_series = pd.Series(options_on_market_info['strike_price'].tolist(),
+                          index=options_on_market_info['order_book_id'].tolist())
     # get time to maturity
-    ttm_series = get_date2maturity(partial_, _date)
+    ttm_series = get_date2maturity(options_on_market_info, _date)
     # get dividend
-
+    dd_series = get_dividend(options_on_market_info)
     # get underlying_price
+    udp_series = get_underlying_price(options_on_market_info, _date)
+    # get volatility
+    # vol_series = get_implied_volatility(option_price, udp_series, sp_series, rf_series, dd_series, ttm_series)
+    # get greeks
+    type_series = get_type(options_on_market_info)
+    all_in_all = {'option_price': option_price, 'udp_series': udp_series, 'sp_series': sp_series,
+                  'rf_series': rf_series,
+                  'dd_series': dd_series, 'ttm_series': ttm_series, 'type_series': type_series}
+
+    pd_data = pd.DataFrame(all_in_all, index=option_price.index)
+    print(get_d1(udp_series, sp_series, rf_series, dd_series, ))
+
+    return pd_data
 
 
-if __name__ == '__main__':
+def check_runtime(_func):
+    def decorator(*args, **kwargs):
+        start = timeit.default_timer()
+        _func()
+        stop = timeit.default_timer()
+        print('Time: ', stop - start)
+    return decorator
+
+
+@ check_runtime
+def test_func():
     data = get_basic_information()
     date = dt.datetime(2016, 2, 3).date()
     data = filter_options(date, data)
+    print(get_all_para_ready(data, date))
 
-    print(get_date2maturity(data,date))
+
+if __name__ == '__main__':
+    test_func()
+
+
+
+
+
 
 
