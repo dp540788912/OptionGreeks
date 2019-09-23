@@ -6,6 +6,7 @@ from scipy.stats import norm
 import time
 from BSmodel.root_finding_algorithms import *
 import rqdatac
+from rqanalysis.risk import get_risk_free_rate
 
 rqdatac.init('quant', 'quant123', ('172.18.0.17', 16010))
 

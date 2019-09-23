@@ -1,5 +1,5 @@
 import pickle
-from BSmodel import *
+from BSmodel.BS_model import *
 from BSmodel.toolkit import *
 import rqdatac
 
