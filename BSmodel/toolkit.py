@@ -221,7 +221,7 @@ def sr_options_status(date, underlying_id):
     return status
 
 
-def m_options_status(date,underlying_id):
+def m_options_status(date, underlying_id):
     """
     PARAMETERS
     ----------
@@ -279,7 +279,7 @@ def m_options_status(date,underlying_id):
     return status
 
 
-def cu_options_status(date,underlying_id):
+def cu_options_status(date, underlying_id):
     """
     PARAMETERS
     ----------

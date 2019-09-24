@@ -134,7 +134,7 @@ def calc_daily_forward_vol_greeks(date, underlying_id, option_id, calc_number):
     option_types = pd.Series(data=[rqdatac.instruments(id).option_type for id in option_status.index.tolist()],index=option_status.index.tolist())
 
     # 根据不同的time_to_maturity计算对应的implied forward price
-    option_data = pd.concat([time_to_maturity, strike_price, option_status, option_types],axis=1)
+    option_data = pd.concat([time_to_maturity, strike_price, option_status, option_types], axis=1)
     option_data.columns = ['time_to_maturity', 'strike_price', 'option_status', 'option_type']
 
     total_time_to_maturity = time_to_maturity.unique()

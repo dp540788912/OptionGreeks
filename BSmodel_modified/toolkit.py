@@ -1,64 +1,50 @@
-import numpy as np
-import pandas as pd
-from BSmodel.root_finding_algorithms import *
 from BSmodel.interpolation import *
-import rqdatac
-
-rqdatac.init('quant', 'quant123', ('172.18.0.17', 16010))
+import pandas as pd
 
 
-def calc_time_to_maturity(order_book_id, date):
-    """
-    PARAMETERS
-    ----------
-    order_book_id: list，期权的order_book_id
-
-    date: str，当前分析日期
-
-    RETURN
-    ---------
-    pd.Series,返回每只期权当前日期对应的time_to_maturity
-    """
-    time_to_maturity = pd.Series(index=order_book_id)
-
-    for id in order_book_id:
-        option_delisted_date = rqdatac.instruments(id).de_listed_date
-        days_to_maturity = (pd.Timestamp(option_delisted_date) - pd.Timestamp(date)).days
-        time_to_maturity.loc[id] = days_to_maturity / 365
-
-    return time_to_maturity
-
-
-def apply_risk_free_rate(order_book_id, date):
-    """
-    根据期权不同的期限选择对应的无风险利率
-    PARAMETERS
-    ----------
-    order_book_id: list，期权的order_book_id
-
-    date: str，当前分析日期
-
-    RETURN
-    ---------
-    pd.Series,返回每只期权当前日期对应的无风险利率
+def get_things_ready_for_implied_risk(_data, distinct_price, strike_price, option_type, time_to_maturity):
     """
 
-    risk_free_rate = pd.Series(index=order_book_id)
-    current_risk_free = rqdatac.get_yield_curve(date, date, tenor=['0S', '1M', '2M', '3M', '6M', '9M', '1Y'])
-    x = pd.Series(data=[1, 30, 60, 90, 180, 270, 360])
-    y = pd.Series(data=current_risk_free.values[0])
+    :param time_to_maturity: Series, option_id -> time to maturity
+    :param option_type: Series, option_id -> option_type
+    :param strike_price: series, option id -> strike_price
+    :param distinct_price: underlying id -> price: Series
+    :param _data: options information non the market
+    :return:
+    """
+    underlying_ids = _data['underlying_order_book_id'].unique().tolist()
 
-    for id in order_book_id:
-        option_delisted_date = rqdatac.instruments(id).de_listed_date
+    def _op_status(underlying_id):
+        op_id_list = _data[_data['underlying_order_book_id'] == underlying_id]['order_book_id'].tolist()
+        args = [distinct_price.loc[underlying_id], op_id_list, strike_price, option_type]
+        if underlying_id == '510050.XSHG':
+            option_status = stock_options_status(*args)
+        elif 'SR' in underlying_id:
+            option_status = sr_options_status(*args)
+        elif 'M' in underlying_id:
+            option_status = m_options_status(*args)
+        elif 'CU' in underlying_id:
+            option_status = cu_options_status(*args)
+        else:
+            raise AttributeError('underlying id is invalid')
 
-        days_to_maturity = (pd.Timestamp(option_delisted_date) - pd.Timestamp(date)).days
+    # 根据不同的time_to_maturity计算对应的implied forward price
+    option_data = pd.concat([time_to_maturity, strike_price, option_status, option_types], axis=1)
+    option_data.columns = ['time_to_maturity', 'strike_price', 'option_status', 'option_type']
 
-        risk_free_rate.loc[id] = cubic_spline_interpolation(y, x, np.array([days_to_maturity])).values[0]
+    total_time_to_maturity = time_to_maturity.unique()
+    implied_forward = pd.Series(index=option_id)
+    implied_risk_free = pd.Series(index=option_id)
 
-    return risk_free_rate
+    for period in total_time_to_maturity:
+        selected_options, selected_call_option, selected_put_option = select_option(option_data, period, calc_number)
+
+        current_time_to_maturity_contracts = time_to_maturity[time_to_maturity == period].index.tolist()
+        #计算当前期限期权远期价格
+        implied_forward.loc[current_time_to_maturity_contracts],implied_risk_free.loc[current_time_to_maturity_contracts] = calc_implied_forward_and_risk_free(selected_options, option_price, strike_price,underlying_price,period)
 
 
-def calc_implied_forward_and_risk_free(selected_options, option_price, strike_price, underlying_price,time_to_maturity):
+def calc_implied_forward_and_risk_free(selected_options, option_price, strike_price, underlying_price, time_to_maturity):
     """
     计算对应期限期权的隐含远期价格和隐含无风险利率
     PARAMETERS
@@ -84,7 +70,7 @@ def calc_implied_forward_and_risk_free(selected_options, option_price, strike_pr
 
     """
     implied_forward = 0
-
+    key = 0
     for key in list(selected_options.keys()):
         implied_forward += strike_price.loc[key] / (1 - (option_price.loc[key] - option_price.loc[selected_options[key]]) / underlying_price.loc[key])
 
@@ -92,252 +78,10 @@ def calc_implied_forward_and_risk_free(selected_options, option_price, strike_pr
 
     implied_risk_free = np.log(implied_forward/underlying_price.loc[key]) / time_to_maturity
 
-    return implied_forward, implied_risk_free
+    return implied_risk_free
 
 
-def stock_options_status(date, underlying_id):
-    """
-    PARAMETERS
-    ----------
-    date: str，当前分析日期
-
-    underlying_id: str，50ETF期权的标的，即 '510050.XSHG'
-
-    RETURN
-    ---------
-    当前存续的50ETF期权的状态，ATM、ITM 或 OTM
-    """
-
-    underlying_price = rqdatac.get_price(underlying_id, date, date, '1d', 'close').loc[date]
-
-    # 取出当天可交易的所有50ETF期权
-    option_id = rqdatac.options.get_contracts(underlying_id,trading_date=date)
-
-    # 取出可交易期权的strike price
-    strike_price = rqdatac.get_price(option_id, date, date, fields='strike_price').loc[date]
-
-    status = pd.Series(index=option_id)
-
-    if underlying_price <= 3:
-        price_interval = 0.05
-    elif underlying_price <= 5:
-        price_interval = 0.1
-    elif underlying_price <= 10:
-        price_interval = 0.25
-    elif underlying_price <= 20:
-        price_interval = 0.5
-    elif underlying_price <= 50:
-        price_interval = 1
-    elif underlying_price <= 100:
-        price_interval = 2.5
-    else:
-        price_interval = 5
-
-    times = np.around(underlying_price / price_interval, 0)
-    current_atm_option = np.around(times * price_interval, 3)
-
-    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
-    if strike_price[strike_price == current_atm_option].shape[0] == 0:
-        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
-
-    for id in option_id:
-        if strike_price.loc[id] == current_atm_option:
-            status.loc[id] = 'ATM'
-
-        elif strike_price.loc[id] > current_atm_option:
-            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'OTM'
-            else:
-                status.loc[id] = 'ITM'
-
-        else:
-            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'ITM'
-            else:
-                status.loc[id] = 'OTM'
-
-    return status
-
-
-# FIXME:商品期权ATM如何确定，目前逻辑为四舍五入，若四舍五入之后没有对应的期权数据，则选择距离现价最近的期权定义为ATM
-def sr_options_status(date, underlying_id):
-    """
-    PARAMETERS
-    ----------
-    date: str，当前分析日期
-
-    underlying_id: str，白糖期权的标的期货
-
-    RETURN
-    ---------
-    当前存续的白糖期权的状态，ATM、ITM 或 OTM
-    """
-
-    underlying_price = rqdatac.get_price(underlying_id, date, date, '1d', 'close').loc[date]
-
-    # 取出当天可交易的所有白糖期权
-    option_id = rqdatac.options.get_contracts(underlying_id)
-    option_id = [id for id in option_id if rqdatac.instruments(id).de_listed_date >= str(date)]
-    option_id = [id for id in option_id if rqdatac.instruments(id).listed_date <= str(date)]
-    # 取出可交易期权的strike price
-    strike_price = rqdatac.get_price(option_id, date, date, fields='strike_price').loc[date]
-
-    status = pd.Series(index=option_id)
-
-    if underlying_price <= 3000:
-        price_interval = 50
-    elif underlying_price <= 10000:
-        price_interval = 100
-    else:
-        price_interval = 200
-
-    times = np.around(underlying_price / price_interval, 0)
-    current_atm_option = np.around(times * price_interval, 0)
-
-    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
-    if strike_price[strike_price == current_atm_option].shape[0] == 0:
-        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
-
-    for id in option_id:
-        if strike_price.loc[id] == current_atm_option:
-            status.loc[id] = 'ATM'
-
-        elif strike_price.loc[id] > current_atm_option:
-            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'OTM'
-            else:
-                status.loc[id] = 'ITM'
-
-        else:
-            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'ITM'
-            else:
-                status.loc[id] = 'OTM'
-
-    return status
-
-
-def m_options_status(date,underlying_id):
-    """
-    PARAMETERS
-    ----------
-    date: str，当前分析日期
-
-    underlying_id: str，豆粕期权的标的期货
-
-    RETURN
-    ---------
-    当前存续的豆粕期权的状态，ATM、ITM 或 OTM
-    """
-
-    underlying_price = rqdatac.get_price(underlying_id, date, date, '1d', 'close').loc[date]
-
-    # 取出当天可交易的所有豆粕期权
-    option_id = rqdatac.options.get_contracts(underlying_id)
-    option_id = [id for id in option_id if rqdatac.instruments(id).de_listed_date >= str(date)]
-    option_id = [id for id in option_id if rqdatac.instruments(id).listed_date <= str(date)]
-    # 取出可交易期权的strike price
-    strike_price = rqdatac.get_price(option_id, date, date, fields='strike_price').loc[date]
-
-    status = pd.Series(index=option_id)
-
-    if underlying_price <= 2000:
-        price_interval = 25
-    elif underlying_price <= 5000:
-        price_interval = 50
-    else:
-        price_interval = 100
-
-    times = np.around(underlying_price / price_interval, 0)
-    current_atm_option = np.around(times * price_interval, 0)
-    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
-    if strike_price[strike_price == current_atm_option].shape[0] == 0:
-        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
-
-    for id in option_id:
-        if strike_price.loc[id] == current_atm_option:
-            status.loc[id] = 'ATM'
-
-        elif strike_price.loc[id] > current_atm_option:
-            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'OTM'
-            else:
-                status.loc[id] = 'ITM'
-
-        else:
-            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'ITM'
-            else:
-                status.loc[id] = 'OTM'
-
-    return status
-
-
-def cu_options_status(date,underlying_id):
-    """
-    PARAMETERS
-    ----------
-    date: str，当前分析日期
-
-    underlying_id: str，铜期权的标的期货
-
-    RETURN
-    ---------
-    当前存续的铜期权的状态，ATM、ITM 或 OTM
-    """
-
-    underlying_price = rqdatac.get_price(underlying_id, date, date, '1d', 'close').loc[date]
-
-    # 取出当天可交易的所有铜期权
-    option_id = rqdatac.options.get_contracts(underlying_id)
-    option_id = [id for id in option_id if rqdatac.instruments(id).de_listed_date >= str(date)]
-    option_id = [id for id in option_id if rqdatac.instruments(id).listed_date <= str(date)]
-    # 取出可交易期权的strike price
-    strike_price = rqdatac.get_price(option_id, date, date, fields='strike_price').loc[date]
-
-    status = pd.Series(index=option_id)
-
-    if underlying_price <= 40000:
-        price_interval = 500
-    elif underlying_price <= 80000:
-        price_interval = 1000
-    else:
-        price_interval = 2000
-
-    times = np.around(underlying_price / price_interval, 0)
-    current_atm_option = np.around(times * price_interval, 0)
-    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
-    if strike_price[strike_price == current_atm_option].shape[0] == 0:
-        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
-
-    for id in option_id:
-        if strike_price.loc[id] == current_atm_option:
-            status.loc[id] = 'ATM'
-
-        elif strike_price.loc[id] > current_atm_option:
-            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'OTM'
-            else:
-                status.loc[id] = 'ITM'
-
-        else:
-            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
-            if rqdatac.instruments(id).option_type == 'C':
-                status.loc[id] = 'ITM'
-            else:
-                status.loc[id] = 'OTM'
-
-    return status
-
-
-def select_option(option_data, time_to_maturity, calc_number):
+def select_option(option_data, time_to_maturity, calc_number=3):
     """
     挑选对应期限的ATM期权，包括 call option 和 put option
     PARAMETERS
@@ -411,45 +155,226 @@ def select_option(option_data, time_to_maturity, calc_number):
     return selected_options, selected_call_option, selected_put_option
 
 
-# 对计算得到的implied volatility进行处理
-def processing_implied_volatility(implied_volatility, strike_price, time_to_maturity, option_types):
+def stock_options_status(underlying_price, option_id, strike_price, option_type):
     """
-    针对deep in the money 或者 deep out of the money的期权隐含波动率使用行权价和期限相同的期权进行近似处理
     PARAMETERS
     ----------
-    implied_volatility: pd.Series,index为期权id，values为其对应的隐含波动率
+    date:
 
-    strike_price: pd.Series,index为期权id，values为其对应的行权价
-
-    option_types: pd.Series,index为期权id，values为其对应的期权类型'C'或者'P'
+    underlying_id:
 
     RETURN
-    ----------
-    pd.Series,index为期权id，values为其对应的隐含波动率
+    ---------
+    当前存续的50ETF期权的状态，ATM、ITM 或 OTM
+    :param option_type: series index = order_book_id, value = option type
+    :param strike_price: strike prices for all options in the market
+    :param option_id: option ids for underlying id, eg: '500050.XSHE'
+    :param underlying_price: price for a exact underlying book ids. eg '500050.XSHE'
     """
 
-    processed_implied_volatility = implied_volatility.copy()
+    status = pd.Series(index=option_id)
 
-    # 挑选出implied volatility数值趋近于0的期权：
-    selected_options = implied_volatility[abs(implied_volatility) <= 1e-4]
+    if underlying_price <= 3:
+        price_interval = 0.05
+    elif underlying_price <= 5:
+        price_interval = 0.1
+    elif underlying_price <= 10:
+        price_interval = 0.25
+    elif underlying_price <= 20:
+        price_interval = 0.5
+    elif underlying_price <= 50:
+        price_interval = 1
+    elif underlying_price <= 100:
+        price_interval = 2.5
+    else:
+        price_interval = 5
 
-    # 针对结果无限趋近于0的call / put option，使用跟其到期时间和行权价相同的put / call option的隐含波动率填补
+    times = np.around(underlying_price / price_interval, 0)
+    current_atm_option = np.around(times * price_interval, 3)
 
-    for id in selected_options.index.tolist():
-        current_option_type = option_types.loc[id]
-        current_time_to_maturity = time_to_maturity.loc[id]
-        current_strike_price = strike_price.loc[id]
+    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
+    if strike_price[strike_price == current_atm_option].shape[0] == 0:
+        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
 
-        # 根据time_to_maturity先挑选出所有期限相同的期权
-        first_selected_options = time_to_maturity[time_to_maturity==current_time_to_maturity].index.tolist()
-        second_selected = strike_price.loc[first_selected_options][strike_price.loc[first_selected_options]==current_strike_price].index.tolist()
+    for _id in option_id:
+        if strike_price.loc[_id] == current_atm_option:
+            status.loc[_id] = 'ATM'
 
-        if current_option_type == 'P':
-            target_type = 'C'
+        elif strike_price.loc[_id] > current_atm_option:
+            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'OTM'
+            else:
+                status.loc[_id] = 'ITM'
+
         else:
-            target_type = 'P'
-        target_id = option_types.loc[second_selected][option_types.loc[second_selected]==target_type].index[0]
+            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'ITM'
+            else:
+                status.loc[_id] = 'OTM'
 
-        processed_implied_volatility.loc[id] = processed_implied_volatility.loc[target_id]
+    return status
 
-    return processed_implied_volatility
+
+# FIXME:商品期权ATM如何确定，目前逻辑为四舍五入，若四舍五入之后没有对应的期权数据，则选择距离现价最近的期权定义为ATM
+def sr_options_status(underlying_price, option_id, strike_price, option_type):
+    """
+    PARAMETERS
+    ----------
+    date: str，当前分析日期
+
+    underlying_id: str，白糖期权的标的期货
+
+    RETURN
+    ---------
+    当前存续的白糖期权的状态，ATM、ITM 或 OTM
+    :param option_type: series index = order_book_id, value = option type
+    :param strike_price: strike prices for all options in the market
+    :param option_id: option ids for underlying id, eg: 'SR'
+    :param underlying_price: price for a exact underlying book ids. eg SR
+    """
+
+    status = pd.Series(index=option_id)
+
+    if underlying_price <= 3000:
+        price_interval = 50
+    elif underlying_price <= 10000:
+        price_interval = 100
+    else:
+        price_interval = 200
+
+    times = np.around(underlying_price / price_interval, 0)
+    current_atm_option = np.around(times * price_interval, 0)
+
+    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
+    if strike_price[strike_price == current_atm_option].shape[0] == 0:
+        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
+
+    for id in option_id:
+        if strike_price.loc[id] == current_atm_option:
+            status.loc[id] = 'ATM'
+
+        elif strike_price.loc[id] > current_atm_option:
+            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
+            if option_type.loc[id] == 'C':
+                status.loc[id] = 'OTM'
+            else:
+                status.loc[id] = 'ITM'
+
+        else:
+            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
+            if option_type.loc[id] == 'C':
+                status.loc[id] = 'ITM'
+            else:
+                status.loc[id] = 'OTM'
+
+    return status
+
+
+def m_options_status(underlying_price, option_id, strike_price, option_type):
+    """
+    PARAMETERS
+    ----------
+    date: str，当前分析日期
+
+    underlying_id: str，豆粕期权的标的期货
+
+    RETURN
+    ---------
+    当前存续的豆粕期权的状态，ATM、ITM 或 OTM
+    :param option_type: series index = order_book_id, value = option type
+    :param strike_price: strike prices for all options in the market
+    :param option_id: option ids for underlying id, eg: 'SR'
+    :param underlying_price: price for a exact underlying book ids. eg SR
+    """
+
+    status = pd.Series(index=option_id)
+
+    if underlying_price <= 2000:
+        price_interval = 25
+    elif underlying_price <= 5000:
+        price_interval = 50
+    else:
+        price_interval = 100
+
+    times = np.around(underlying_price / price_interval, 0)
+    current_atm_option = np.around(times * price_interval, 0)
+    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
+    if strike_price[strike_price == current_atm_option].shape[0] == 0:
+        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
+
+    for _id in option_id:
+        if strike_price.loc[_id] == current_atm_option:
+            status.loc[_id] = 'ATM'
+
+        elif strike_price.loc[_id] > current_atm_option:
+            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'OTM'
+            else:
+                status.loc[_id] = 'ITM'
+
+        else:
+            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'ITM'
+            else:
+                status.loc[_id] = 'OTM'
+
+    return status
+
+
+def cu_options_status(underlying_price, option_id, strike_price, option_type):
+    """
+    PARAMETERS
+    ----------
+    date: str，当前分析日期
+
+    underlying_id: str，豆粕期权的标的期货
+
+    RETURN
+    ---------
+    当前存续的豆粕期权的状态，ATM、ITM 或 OTM
+    :param option_type: series index = order_book_id, value = option type
+    :param strike_price: strike prices for all options in the market
+    :param option_id: option ids for underlying id, eg: 'SR'
+    :param underlying_price: price for a exact underlying book ids. eg SR
+    """
+
+    status = pd.Series(index=option_id)
+
+    if underlying_price <= 40000:
+        price_interval = 500
+    elif underlying_price <= 80000:
+        price_interval = 1000
+    else:
+        price_interval = 2000
+
+    times = np.around(underlying_price / price_interval, 0)
+    current_atm_option = np.around(times * price_interval, 0)
+    # 若当前期权中没有符合ATM要求的期权，则选择此时距离理论上ATM期权最近的期权定位ATM
+    if strike_price[strike_price == current_atm_option].shape[0] == 0:
+        current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
+
+    for id in option_id:
+        if strike_price.loc[id] == current_atm_option:
+            status.loc[id] = 'ATM'
+
+        elif strike_price.loc[id] > current_atm_option:
+            # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
+            if option_type.loc[id] == 'C':
+                status.loc[id] = 'OTM'
+            else:
+                status.loc[id] = 'ITM'
+
+        else:
+            # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
+            if option_type.loc[id] == 'C':
+                status.loc[id] = 'ITM'
+            else:
+                status.loc[id] = 'OTM'
+
+    return status
+
+
