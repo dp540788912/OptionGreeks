@@ -1,15 +1,11 @@
-from datetime import datetime
 
 from BSmodel_modified.BS_model import *
 import rqdatac
-import numpy
 import pandas as pd
-import math
 import datetime as dt
 from rqanalysis.risk import get_risk_free_rate
 import timeit
 
-pd.set_option('display.max_columns', None)
 rqdatac.init('rice', 'rice', ('dev', 16010))
 
 """
@@ -27,36 +23,34 @@ rqdatac.init('rice', 'rice', ('dev', 16010))
 
     :return: True if all the jobs done
 """
-
-
 # get parameters
-def filter_options(_date, param_list):
-    """
-    get all options price that is on the market
-    :param _date: date
-    :param param_list: all option information
-    :return: pandas.dataframe
-    """
-
-    shrink_ = param_list[param_list['maturity_date'] >= _date]
-    shrink_ = shrink_[shrink_['listed_date'] <= _date]
-    return shrink_
+# def filter_options(_date, param_list):
+#     """
+#     get all options price that is on the market
+#     :param _date: date
+#     :param param_list: all option information
+#     :return: pandas.dataframe
+#     """
+#
+#     shrink_ = param_list[param_list['de_listed_date'] >= _date]
+#     shrink_ = shrink_[shrink_['listed_date'] <= _date]
+#     return shrink_
 
 
 # init
-def get_basic_information() -> pd.DataFrame:
+def get_basic_information(_date) -> pd.DataFrame:
     """
     :return: pandas dataframe, index[ nan ]: [[], [], .... ]
     """
     _partial_param_list = object()
-    necessary = ['order_book_id', 'strike_price', 'underlying_order_book_id', 'maturity_date', 'listed_date',
-                 'option_type']
+    necessary = ['order_book_id', 'strike_price', 'underlying_order_book_id', 'de_listed_date', 'listed_date',
+                 'option_type', 'underlying_symbol']
     try:
-        _partial_param_list = rqdatac.all_instruments(type='Option')[necessary]
+        _partial_param_list = rqdatac.all_instruments(type='Option', date=_date)[necessary]
     except ConnectionAbortedError:
         print('connection error')
         exit()
-    _partial_param_list['maturity_date'] = _partial_param_list['maturity_date'].apply(
+    _partial_param_list['de_listed_date'] = _partial_param_list['de_listed_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
     _partial_param_list['listed_date'] = _partial_param_list['listed_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
@@ -74,7 +68,7 @@ def get_option_price_each_day(_date, all_ids_):
     """
     price_ = rqdatac.get_price(all_ids_, _date, _date, expect_df=True)
     if price_ is not None:
-        return price_['close'].reset_index(level=1, drop=True)
+        return price_['close'].reset_index(level=1, drop=True).rename('option_price')
     else:
         return None
 
@@ -86,20 +80,20 @@ def get_risk_free_series(_date, order_id):
     :return: pandas series, index: option_id, value: risk_free_rate
     """
     rate = get_risk_free_rate(_date, _date)
-    return pd.Series(rate, index=order_id)
+    return pd.Series(rate, index=order_id, name='rf_series')
 
 
 def get_date2maturity(_partial, _date):
-    value_list = map(lambda x: (x - _date).days / 365, _partial['maturity_date'].tolist())
-    return pd.Series(value_list, index=_partial['order_book_id'].tolist())
+    value_list = map(lambda x: (x - _date).days / 365, _partial['de_listed_date'].tolist())
+    return pd.Series(value_list, index=_partial['order_book_id'].tolist(), name='ttm_series')
 
 
 def get_dividend(_partial):
-    return pd.Series(0, index=_partial['order_book_id'].tolist())
+    return pd.Series(0, index=_partial['order_book_id'].tolist(), name='dd_series')
 
 
 def get_type(_partial):
-    return pd.Series(_partial['option_type'].tolist(), _partial['order_book_id'].tolist())
+    return pd.Series(_partial['option_type'].tolist(), _partial['order_book_id'].tolist(), name='type_series')
 
 
 def get_underlying_price(_partial, _date):
@@ -110,10 +104,9 @@ def get_underlying_price(_partial, _date):
         return None
     else:
         distinct_price = distinct_price['close'].reset_index(level=1, drop=True)
-    print(distinct_price)
     # [index = underlying id]: [price] series
     # to [ option id ]: [ value ]
-    tmp_series = pd.Series(0.0, index=_partial['order_book_id'].tolist())
+    tmp_series = pd.Series(0.0, index=_partial['order_book_id'].tolist(), name='udp_series')
     _map = pd.Series(_partial['underlying_order_book_id'].tolist(), index=_partial['order_book_id'].tolist())
 
     for n in tmp_series.index:
@@ -135,35 +128,57 @@ def get_trading_dates_all_option(partial_param_list_1, end_date):
     return trading_dates
 
 
-def get_all_para_ready(partial_, _date):
-    # data frame
-    options_on_market_info = filter_options(_date, partial_)
-
+def get_all_para_ready(options_on_market_info, _date):
     # get option price
     option_price = get_option_price_each_day(_date, options_on_market_info['order_book_id'].tolist())
     # get risk free rate
     rf_series = get_risk_free_series(_date, options_on_market_info['order_book_id'].tolist())
     # get strike_price
     sp_series = pd.Series(options_on_market_info['strike_price'].tolist(),
-                          index=options_on_market_info['order_book_id'].tolist())
+                          index=options_on_market_info['order_book_id'].tolist(), name='sp_series')
     # get time to maturity
     ttm_series = get_date2maturity(options_on_market_info, _date)
     # get dividend
     dd_series = get_dividend(options_on_market_info)
     # get underlying_price
     udp_series = get_underlying_price(options_on_market_info, _date)
-    # get volatility
-    # vol_series = get_implied_volatility(option_price, udp_series, sp_series, rf_series, dd_series, ttm_series)
-    # get greeks
+    # get type series
     type_series = get_type(options_on_market_info)
-    all_in_all = {'option_price': option_price, 'udp_series': udp_series, 'sp_series': sp_series,
-                  'rf_series': rf_series,
-                  'dd_series': dd_series, 'ttm_series': ttm_series, 'type_series': type_series}
+    # merge
+    merge_data = pd.concat([option_price, udp_series, sp_series, rf_series, dd_series, ttm_series, type_series], axis=1)
+    names = merge_data.columns.values.tolist()
+    para = [merge_data[x] for x in names]
+    # get volatility
+    vol_series = get_implied_volatility(*para)
+    """
+    Get Greeks 
+    """
+    delta = get_delta(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('delta')
+    gamma = get_gamma(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series).rename('gamma')
+    theta = get_theta(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('theta')
+    vega = get_vega(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series).rename('vega')
+    rho = get_rho(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('rho')
 
-    pd_data = pd.DataFrame(all_in_all, index=option_price.index)
-    print(get_d1(udp_series, sp_series, rf_series, dd_series, ))
+    pd_data = pd.concat([delta, gamma, theta, vega, rho], axis=1)
+    # multi-index
+    date_array = [_date for x in range(len(option_price.index))]
+    mul_index = pd.MultiIndex.from_arrays([pd_data.index.tolist(), date_array], names=('order_book_id', 'date'))
 
+    pd_data.index = mul_index
     return pd_data
+
+
+def get_greeks(_date, sc_only=True):
+    """
+    get the greeks value of all the options on the market
+    :param sc_only: True only check common stock option
+    :param _date: a specific date
+    :return: a data frame: index[ id, date ] : columns[delta, gamma, theta, vega, rho]
+    """
+    all_data = get_basic_information(_date)
+    if sc_only:
+        all_data = all_data[all_data['underlying_symbol'] == '510050.XSHG']
+    return get_all_para_ready(all_data, _date)
 
 
 def check_runtime(_func):
@@ -177,14 +192,9 @@ def check_runtime(_func):
 
 @ check_runtime
 def test_func():
-    data = get_basic_information()
-    date = dt.datetime(2016, 2, 3).date()
-    data = filter_options(date, data)
-    print(get_all_para_ready(data, date))
+    q_date = dt.datetime(2019, 9, 23).date()
+    print(get_greeks(q_date))
 
-
-if __name__ == '__main__':
-    test_func()
 
 
 

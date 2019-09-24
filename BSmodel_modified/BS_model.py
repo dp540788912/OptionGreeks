@@ -299,4 +299,4 @@ def get_implied_volatility(option_price, underlying_price, strike_price, risk_fr
 
         implied_volatility.loc[my_id], brent_status.loc[my_id] = brent_iteration(_target_function, lower_bound, upper_bound, max_iteration, tol)
 
-    return implied_volatility, brent_status
+    return implied_volatility

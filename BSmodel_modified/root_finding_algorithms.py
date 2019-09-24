@@ -36,17 +36,14 @@ def bisection_iteration(target_function, lower_bound, upper_bound, max_iteration
     while abs(target_function((upper_bound + lower_bound) / 2)) >= tol and iteration <= max_iteration:
 
         if abs(target_function(mean)) <= tol:
-            print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
             status = 0
             return mean, status
 
         if abs(target_function(upper_bound)) <= tol:
-            print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
             status = 0
             return upper_bound, status
 
         if abs(target_function(lower_bound)) <= tol:
-            print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
             status = 0
             return lower_bound, status
 
@@ -60,11 +57,9 @@ def bisection_iteration(target_function, lower_bound, upper_bound, max_iteration
 
     if iteration > max_iteration:
         status = 1
-        print('迭代次数超出最大迭代次数，未收敛至指定精度，迭代结束')
         return mean, status
     else:
         status = 0
-        print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
         return mean, status
 
 
@@ -73,7 +68,6 @@ def newton_iteration(target_function, derivative_function, initial_value, max_it
     iteration = 0
     root = initial_value
     if abs(target_function(root)) <= tol:
-        print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
         status = 0
         return root, status
 
@@ -86,7 +80,6 @@ def newton_iteration(target_function, derivative_function, initial_value, max_it
 
         # 若下一步迭代的解vega值小于上一步迭代解的1/100，则可判断牛顿法出现震荡，跳转至二分法求解
         if derivative_function(root) / derivative_function(next_guess) >= 100:
-            print('vega值过小，牛顿法迭代出现震荡，跳转至二分法求解')
             root, status = bisection_iteration(target_function,root,next_guess)
             status = 2
             return root, status
@@ -96,11 +89,9 @@ def newton_iteration(target_function, derivative_function, initial_value, max_it
 
     if iteration > max_iteration:
         status = 1
-        print('迭代次数超出最大迭代次数，未收敛至指定精度，迭代结束')
         return root, status
     else:
         status = 0
-        print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
         return root, status
 
 
@@ -169,10 +160,8 @@ def brent_iteration(target_function, x1, x0, max_iteration=100, tol=1e-7):
 
     if iteration >= max_iteration:
         status = 1
-        print('迭代次数超出最大迭代次数，未收敛至指定精度，迭代结束')
         return x1, status
     else:
         status = 0
-        print('迭代成功收敛至指定精度范围内,迭代次数为：' + str(iteration))
         return x1, status
 
