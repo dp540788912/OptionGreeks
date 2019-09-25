@@ -1,47 +1,73 @@
-from BSmodel.interpolation import *
+from BSmodel_modified.interpolation import *
 import pandas as pd
 
 
-def get_things_ready_for_implied_risk(_data, distinct_price, strike_price, option_type, time_to_maturity):
+def cal_risk_free_for_underlying_id(underlying_id, _data, distinct_price, strike_price, option_type, time_to_maturity, option_price, underlying_price):
     """
-
-    :param time_to_maturity: Series, option_id -> time to maturity
-    :param option_type: Series, option_id -> option_type
-    :param strike_price: series, option id -> strike_price
-    :param distinct_price: underlying id -> price: Series
-    :param _data: options information non the market
+    Given a underlying id, return a series, with index = option_id whose underlying id is the given id
+    and value is the forward risk free rate
+    :param underlying_id:
+    :param _data:
+    :param distinct_price:
+    :param strike_price:
+    :param option_type:
+    :param time_to_maturity:
+    :param option_price:
+    :param underlying_price:
     :return:
     """
-    underlying_ids = _data['underlying_order_book_id'].unique().tolist()
+    status = get_status(underlying_id, _data, distinct_price, strike_price, option_type)
+    option_data = construct_option_data(time_to_maturity, strike_price, status, option_type)
 
-    def _op_status(underlying_id):
-        op_id_list = _data[_data['underlying_order_book_id'] == underlying_id]['order_book_id'].tolist()
-        args = [distinct_price.loc[underlying_id], op_id_list, strike_price, option_type]
-        if underlying_id == '510050.XSHG':
-            option_status = stock_options_status(*args)
-        elif 'SR' in underlying_id:
-            option_status = sr_options_status(*args)
-        elif 'M' in underlying_id:
-            option_status = m_options_status(*args)
-        elif 'CU' in underlying_id:
-            option_status = cu_options_status(*args)
-        else:
-            raise AttributeError('underlying id is invalid')
+    this_time2mature = option_data['time_to_maturity']
+    unique_time = this_time2mature.unique().tolist()
+    forward_risk_free = pd.Series(index=status.index.tolist())
 
-    # 根据不同的time_to_maturity计算对应的implied forward price
-    option_data = pd.concat([time_to_maturity, strike_price, option_status, option_types], axis=1)
+    for cur_time2mature in unique_time:
+        selected_option = select_option(option_data, cur_time2mature)
+        tmp_rf = calc_implied_forward_and_risk_free(selected_option, option_price, strike_price, underlying_price, cur_time2mature)
+        cur_contract = this_time2mature[this_time2mature == cur_time2mature].index.tolist()
+        forward_risk_free.loc[cur_contract] = tmp_rf
+
+    return forward_risk_free
+
+
+def get_status(underlying_id, _data, distinct_price, strike_price, option_type):
+    """
+    :param underlying_id:
+    :param _data:
+    :param distinct_price:
+    :param strike_price:
+    :param option_type:
+    :return: option status, for options on the market with exact underlying id
+    """
+    op_id_list = _data[_data['underlying_order_book_id'] == underlying_id]['order_book_id'].tolist()
+    args = [distinct_price.loc[underlying_id], op_id_list, strike_price, option_type]
+    if underlying_id == '510050.XSHG':
+        option_status = stock_options_status(*args)
+    elif 'SR' in underlying_id:
+        option_status = sr_options_status(*args)
+    elif 'M' in underlying_id:
+        option_status = m_options_status(*args)
+    elif 'CU' in underlying_id:
+        option_status = cu_options_status(*args)
+    else:
+        raise AttributeError('underlying id is invalid or not currently supported')
+    return option_status
+
+
+def construct_option_data(time_to_maturity, strike_price, option_status, option_types):
+    """
+
+    :param time_to_maturity:
+    :param strike_price:
+    :param option_status:
+    :param option_types:
+    :return:
+    """
+    option_data = pd.concat([time_to_maturity, strike_price, option_status, option_types], axis=1).dropna()
     option_data.columns = ['time_to_maturity', 'strike_price', 'option_status', 'option_type']
-
-    total_time_to_maturity = time_to_maturity.unique()
-    implied_forward = pd.Series(index=option_id)
-    implied_risk_free = pd.Series(index=option_id)
-
-    for period in total_time_to_maturity:
-        selected_options, selected_call_option, selected_put_option = select_option(option_data, period, calc_number)
-
-        current_time_to_maturity_contracts = time_to_maturity[time_to_maturity == period].index.tolist()
-        #计算当前期限期权远期价格
-        implied_forward.loc[current_time_to_maturity_contracts],implied_risk_free.loc[current_time_to_maturity_contracts] = calc_implied_forward_and_risk_free(selected_options, option_price, strike_price,underlying_price,period)
+    return option_data
 
 
 def calc_implied_forward_and_risk_free(selected_options, option_price, strike_price, underlying_price, time_to_maturity):
@@ -152,7 +178,7 @@ def select_option(option_data, time_to_maturity, calc_number=3):
     for i in range(len(selected_call_option)):
         selected_options.update({selected_call_option[i]: selected_put_option[i]})
 
-    return selected_options, selected_call_option, selected_put_option
+    return selected_options
 
 
 def stock_options_status(underlying_price, option_id, strike_price, option_type):
@@ -165,7 +191,7 @@ def stock_options_status(underlying_price, option_id, strike_price, option_type)
 
     RETURN
     ---------
-    当前存续的50ETF期权的状态，ATM、ITM 或 OTM
+    当前存续的50ETF期权的状态，ATM、ITM 或 OTM, for option id
     :param option_type: series index = order_book_id, value = option type
     :param strike_price: strike prices for all options in the market
     :param option_id: option ids for underlying id, eg: '500050.XSHE'
@@ -222,16 +248,13 @@ def sr_options_status(underlying_price, option_id, strike_price, option_type):
     """
     PARAMETERS
     ----------
-    date: str，当前分析日期
 
-    underlying_id: str，白糖期权的标的期货
-
-    RETURN
+    RETURN pandas series index = option id , value = status
     ---------
     当前存续的白糖期权的状态，ATM、ITM 或 OTM
     :param option_type: series index = order_book_id, value = option type
     :param strike_price: strike prices for all options in the market
-    :param option_id: option ids for underlying id, eg: 'SR'
+    :param option_id: option ids for underlying id, eg: 'SR', list
     :param underlying_price: price for a exact underlying book ids. eg SR
     """
 
@@ -251,23 +274,23 @@ def sr_options_status(underlying_price, option_id, strike_price, option_type):
     if strike_price[strike_price == current_atm_option].shape[0] == 0:
         current_atm_option = abs((strike_price - current_atm_option)).min() + current_atm_option
 
-    for id in option_id:
-        if strike_price.loc[id] == current_atm_option:
-            status.loc[id] = 'ATM'
+    for _id in option_id:
+        if strike_price.loc[_id] == current_atm_option:
+            status.loc[_id] = 'ATM'
 
-        elif strike_price.loc[id] > current_atm_option:
+        elif strike_price.loc[_id] > current_atm_option:
             # 当行权价格比期货价格高时，若期权为call option，此时期权状态为'OTM'（out of the money），若期权为put option,此时期权状态为为'ITM'（in the money）
-            if option_type.loc[id] == 'C':
-                status.loc[id] = 'OTM'
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'OTM'
             else:
-                status.loc[id] = 'ITM'
+                status.loc[_id] = 'ITM'
 
         else:
             # 当行权价格比期货价格低时，若期权为call option，此时期权状态为'ITM'（in the money），若期权为put option,此时期权状态为为'OTM'（out of the money）
-            if option_type.loc[id] == 'C':
-                status.loc[id] = 'ITM'
+            if option_type.loc[_id] == 'C':
+                status.loc[_id] = 'ITM'
             else:
-                status.loc[id] = 'OTM'
+                status.loc[_id] = 'OTM'
 
     return status
 
@@ -376,5 +399,3 @@ def cu_options_status(underlying_price, option_id, strike_price, option_type):
                 status.loc[id] = 'OTM'
 
     return status
-
-

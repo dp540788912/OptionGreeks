@@ -1,5 +1,6 @@
 
 from BSmodel_modified.BS_model import *
+from BSmodel_modified.toolkit import *
 import rqdatac
 import pandas as pd
 import datetime as dt
@@ -117,8 +118,20 @@ def get_trading_dates_all_option(partial_param_list_1, end_date) -> list:
     return trading_dates
 
 
-def get_all_para_ready(options_on_market_info, _date) -> pd.DataFrame:
+def get_forward_risk_rate(_data, distinct_price, strike_price, option_type, time_to_maturity, option_price, underlying_price):
+    distinct_underlying_id = _data['underlying_order_book_id'].unique().tolist()
+    forward_risk_free_series = pd.Series(index=_data['order_book_id'])
+
+    for _id in distinct_underlying_id:
+        tmp_rf = cal_risk_free_for_underlying_id(_id, _data, distinct_price, strike_price, option_type, time_to_maturity, option_price, underlying_price)
+        forward_risk_free_series.loc[tmp_rf.index.tolist()] = tmp_rf.tolist()
+
+    return forward_risk_free_series
+
+
+def get_all_para_ready(options_on_market_info, _date, implied_forward=False):
     """
+    :param implied_forward: indicator
     :param options_on_market_info: DataFrame, options on market
     :param _date: exact_date
     :return: dataFreme , all the greeks
@@ -127,7 +140,6 @@ def get_all_para_ready(options_on_market_info, _date) -> pd.DataFrame:
     # get option price
     option_price = get_option_price_each_day(_date, options_on_market_info['order_book_id'].tolist())
     # get risk free rate
-    rf_series = get_risk_free_series(_date, options_on_market_info['order_book_id'].tolist())
     # get strike_price
     sp_series = pd.Series(options_on_market_info['strike_price'].tolist(),
                           index=options_on_market_info['order_book_id'].tolist(), name='sp_series')
@@ -139,6 +151,12 @@ def get_all_para_ready(options_on_market_info, _date) -> pd.DataFrame:
     udp_series, distinct_price = get_underlying_price(options_on_market_info, _date)
     # get type series
     type_series = get_type(options_on_market_info)
+
+    if implied_forward:
+        rf_series = get_forward_risk_rate(options_on_market_info, distinct_price, sp_series, type_series, ttm_series, option_price, udp_series)
+    else:
+        rf_series = get_risk_free_series(_date, options_on_market_info['order_book_id'].tolist())
+
     # merge
     merge_data = pd.concat([option_price, udp_series, sp_series, rf_series, dd_series, ttm_series, type_series], axis=1)
     names = merge_data.columns.values.tolist()
@@ -162,9 +180,10 @@ def get_all_para_ready(options_on_market_info, _date) -> pd.DataFrame:
     return pd_data
 
 
-def get_greeks(_date, sc_only=True) -> pd.DataFrame:
+def get_greeks(_date, sc_only=False, implied_forward=False):
     """
     get the greeks value of all the options on the market
+    :param implied_forward: indicator
     :param sc_only: True: only check common stock options, false: all the options
     :param _date: a specific date
     :return: a data frame: index[ id, date ] : columns[delta, gamma, theta, vega, rho]
@@ -172,7 +191,7 @@ def get_greeks(_date, sc_only=True) -> pd.DataFrame:
     all_data = get_basic_information(_date)
     if sc_only:
         all_data = all_data[all_data['underlying_symbol'] == '510050.XSHG']
-    return get_all_para_ready(all_data, _date)
+    return get_all_para_ready(all_data, _date, implied_forward)
 
 
 def check_runtime(_func):
@@ -192,7 +211,7 @@ def check_runtime(_func):
 @ check_runtime
 def test_func():
     q_date = dt.datetime(2019, 9, 23).date()
-    print(get_greeks(q_date))
+    print(get_greeks(q_date, sc_only=True, implied_forward=True))
 
 
 test_func()
