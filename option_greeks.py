@@ -30,10 +30,13 @@ def get_basic_information(_date) -> pd.DataFrame:
     except ConnectionAbortedError:
         print('connection error')
         exit()
+
     _partial_param_list['de_listed_date'] = _partial_param_list['de_listed_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+    _partial_param_list = _partial_param_list[_partial_param_list['de_listed_date'] > _date]
     _partial_param_list['listed_date'] = _partial_param_list['listed_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
+
     return _partial_param_list
 
 
@@ -91,7 +94,7 @@ def get_underlying_price(_partial, _date) -> (pd.Series, pd.Series):
     distinct_id = under_id_list.drop_duplicates()
     distinct_price = rqdatac.get_price(distinct_id.tolist(), _date, _date, expect_df=True)
     if distinct_price is None:
-        return pd.Series(None)
+        raise Exception("the date is not a trading date")
     else:
         distinct_price = distinct_price['close'].reset_index(level=1, drop=True)
     # [index = underlying id]: [price] series
@@ -104,15 +107,19 @@ def get_underlying_price(_partial, _date) -> (pd.Series, pd.Series):
     return tmp_series, distinct_price
 
 
-def get_trading_dates_all_option(partial_param_list_1, end_date) -> list:
+def get_trading_dates_all_option(end_date, start_date=None) -> list:
     """
-    :param partial_param_list_1: pandas dataframe
+    :param start_date: define start date yourself
     :param end_date: datetime, the end date
     :return:
     """
-    all_listed_date = list(
-        map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date(), partial_param_list_1['listed_date']))
-    earliest_list_date = min(all_listed_date)
+    if start_date is None:
+        partial_param_list_1 = rqdatac.all_instruments(type='Option')
+        all_listed_date = partial_param_list_1['listed_date'].apply(
+            lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date()).tolist()
+        earliest_list_date = min(all_listed_date)
+    else:
+        earliest_list_date = start_date
     # get trading date
     trading_dates = rqdatac.get_trading_dates(earliest_list_date, end_date)
     return trading_dates
@@ -129,13 +136,15 @@ def get_forward_risk_rate(_data, distinct_price, strike_price, option_type, time
     return forward_risk_free_series
 
 
-def get_all_para_ready(options_on_market_info, _date, implied_forward=False):
+def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     """
     :param implied_forward: indicator
     :param options_on_market_info: DataFrame, options on market
     :param _date: exact_date
     :return: dataFreme , all the greeks
     """
+    if options_on_market_info.empty:
+        return None
     # Get components needed for calculation
     # get option price
     option_price = get_option_price_each_day(_date, options_on_market_info['order_book_id'].tolist())
@@ -148,11 +157,14 @@ def get_all_para_ready(options_on_market_info, _date, implied_forward=False):
     # get dividend
     dd_series = get_dividend(options_on_market_info)
     # get underlying_price
-    udp_series, distinct_price = get_underlying_price(options_on_market_info, _date)
+    try:
+        udp_series, distinct_price = get_underlying_price(options_on_market_info, _date)
+    except:
+        return None
     # get type series
     type_series = get_type(options_on_market_info)
 
-    if implied_forward:
+    if implied_price:
         rf_series = get_forward_risk_rate(options_on_market_info, distinct_price, sp_series, type_series, ttm_series, option_price, udp_series)
     else:
         rf_series = get_risk_free_series(_date, options_on_market_info['order_book_id'].tolist())
@@ -163,7 +175,6 @@ def get_all_para_ready(options_on_market_info, _date, implied_forward=False):
     para = [merge_data[x] for x in names]
     # get volatility
     vol_series = get_implied_volatility(*para)
-
     # Calculate Geeks
     delta = get_delta(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('delta')
     gamma = get_gamma(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series).rename('gamma')
@@ -174,16 +185,16 @@ def get_all_para_ready(options_on_market_info, _date, implied_forward=False):
     pd_data = pd.concat([delta, gamma, theta, vega, rho], axis=1)
     # multi-index
     date_array = [_date for x in range(len(option_price.index))]
-    mul_index = pd.MultiIndex.from_arrays([date_array, pd_data.index.tolist()], names=('order_book_id', 'date'))
+    mul_index = pd.MultiIndex.from_arrays([pd_data.index.tolist(), date_array], names=('order_book_id', 'trading_date'))
     # set index
     pd_data.index = mul_index
     return pd_data
 
 
-def get_greeks(_date, sc_only=False, implied_forward=False):
+def get_greeks(_date, sc_only=False, implied_price=False):
     """
     get the greeks value of all the options on the market
-    :param implied_forward: indicator
+    :param implied_price: indicator
     :param sc_only: True: only check common stock options, false: all the options
     :param _date: a specific date
     :return: a data frame: index[ id, date ] : columns[delta, gamma, theta, vega, rho]
@@ -191,7 +202,7 @@ def get_greeks(_date, sc_only=False, implied_forward=False):
     all_data = get_basic_information(_date)
     if sc_only:
         all_data = all_data[all_data['underlying_symbol'] == '510050.XSHG']
-    return get_all_para_ready(all_data, _date, implied_forward)
+    return get_all_para_ready(all_data, _date, implied_price)
 
 
 def check_runtime(_func):
@@ -210,11 +221,11 @@ def check_runtime(_func):
 
 @ check_runtime
 def test_func():
-    q_date = dt.datetime(2019, 9, 23).date()
-    print(get_greeks(q_date, sc_only=True, implied_forward=True))
+    q_date = dt.datetime(2019, 9, 26).date()
+    print(get_greeks(q_date, sc_only=True, implied_price=True))
 
 
-test_func()
+# test_func()
 
 
 

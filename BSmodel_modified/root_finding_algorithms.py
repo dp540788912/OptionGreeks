@@ -7,9 +7,9 @@ import warnings
 
 
 def bound_adjustment(target_function, lower_bound, upper_bound):
-
     initial_search_range = upper_bound - lower_bound
-
+    # max_iter = 1000
+    # iter = 0
     while target_function(lower_bound) * target_function(upper_bound) > 0:
         upper_value = target_function(upper_bound)
         lower_value = target_function(lower_bound)
@@ -25,7 +25,6 @@ def bound_adjustment(target_function, lower_bound, upper_bound):
 
 # 二分法
 def bisection_iteration(target_function, lower_bound, upper_bound, max_iteration=100, tol=1e-7):
-
     # 首先判断求解区间是否为异号，若上下界函数取值不合理，调整上下界：
     if target_function(lower_bound) * target_function(upper_bound) > 0:
         lower_bound, upper_bound = bound_adjustment(target_function, lower_bound, upper_bound)
@@ -96,12 +95,11 @@ def newton_iteration(target_function, derivative_function, initial_value, max_it
 
 
 # brent's method https://en.wikipedia.org/wiki/Brent%27s_method#Algorithm
-def brent_iteration(target_function, x1, x0, max_iteration=100, tol=1e-7):
+def brent_iteration(target_function, x0, x1, max_iteration=100, tol=1e-7):
 
     # 首先判断求解区间是否为异号，若上下界函数取值不合理，调整上下界：
     if target_function(x0) * target_function(x1) > 0:
         x0, x1 = bound_adjustment(target_function, x0, x1)
-
     f_x0 = target_function(x0)
     f_x1 = target_function(x1)
 
@@ -114,7 +112,6 @@ def brent_iteration(target_function, x1, x0, max_iteration=100, tol=1e-7):
 
     mflag = True
     iteration = 0
-
     while iteration < max_iteration and abs(target_function(x1)) > tol:
         f_x0 = target_function(x0)
         f_x1 = target_function(x1)
