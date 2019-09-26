@@ -236,7 +236,6 @@ def get_rho(underlying_price, strike_price, risk_free_rate, dividend_yield, vola
 
 
 def get_implied_volatility(option_price, underlying_price, strike_price, risk_free_rate, dividend_yield, time_to_maturity, _type, max_iteration=100, tol=1e-7):
-
     """
     PARAMETERS
     ----------
@@ -281,7 +280,7 @@ def get_implied_volatility(option_price, underlying_price, strike_price, risk_fr
         current_risk_free = risk_free_rate.loc[my_id]
         option_type = _type[my_id]
 
-        lower_bound = 0
+        lower_bound = 1e-5
         upper_bound = 2
 
         def _target_function(volatility):
@@ -299,4 +298,4 @@ def get_implied_volatility(option_price, underlying_price, strike_price, risk_fr
 
         implied_volatility.loc[my_id], brent_status.loc[my_id] = brent_iteration(_target_function, lower_bound, upper_bound, max_iteration, tol)
 
-    return implied_volatility, brent_status
+    return implied_volatility
