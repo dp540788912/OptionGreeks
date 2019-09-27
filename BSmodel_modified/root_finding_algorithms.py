@@ -8,9 +8,9 @@ import warnings
 
 def bound_adjustment(target_function, lower_bound, upper_bound):
     initial_search_range = upper_bound - lower_bound
-    # max_iter = 1000
-    # iter = 0
-    while target_function(lower_bound) * target_function(upper_bound) > 0:
+    max_iter = 100
+    _iter = 0
+    while target_function(lower_bound) * target_function(upper_bound) > 0 and _iter < max_iter:
         upper_value = target_function(upper_bound)
         lower_value = target_function(lower_bound)
 
@@ -20,6 +20,9 @@ def bound_adjustment(target_function, lower_bound, upper_bound):
         elif 0 < lower_value < upper_value or upper_value < lower_value < 0:
             lower_bound = lower_bound - abs(initial_search_range)
 
+        _iter += 1
+    if _iter >= max_iter:
+        return 0, 2
     return lower_bound, upper_bound
 
 

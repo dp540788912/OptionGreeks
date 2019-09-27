@@ -8,6 +8,7 @@ from rqanalysis.risk import get_risk_free_rate
 import timeit
 
 rqdatac.init('rice', 'rice', ('dev', 16010))
+filter_tmp = 'SR|RU|M|CU|510050.XSHG'
 
 """
     According to closed price, calculate implied volatility, and greeks(delta, gamma, vega, theta, rho) of all the
@@ -18,6 +19,7 @@ rqdatac.init('rice', 'rice', ('dev', 16010))
 
 
 # init
+pd.set_option('display.max_columns', 500)
 def get_basic_information(_date) -> pd.DataFrame:
     """
     :return: pandas dataframe, index[ nan ]: [[], [], .... ]
@@ -36,7 +38,8 @@ def get_basic_information(_date) -> pd.DataFrame:
     _partial_param_list = _partial_param_list[_partial_param_list['de_listed_date'] > _date]
     _partial_param_list['listed_date'] = _partial_param_list['listed_date'].apply(
         lambda x: dt.datetime.strptime(x, '%Y-%m-%d').date())
-
+    global filter_tmp
+    _partial_param_list = _partial_param_list[_partial_param_list['underlying_order_book_id'].str.contains(filter_tmp)]
     return _partial_param_list
 
 
@@ -191,7 +194,7 @@ def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     return pd_data
 
 
-def get_greeks(_date, sc_only=False, implied_price=False):
+def get_greeks(_date, sc_only=True, implied_price=False):
     """
     get the greeks value of all the options on the market
     :param implied_price: indicator

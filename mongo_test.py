@@ -45,10 +45,10 @@ class CustomizedMongo:
 @ og.check_runtime
 def initial_data(drop=0):
     url = 'mongodb://root:root@192.168.10.30:27017/option?authSource=admin'
-    db = 'test222'
-    col = 'one_day'
+    db = 'option'
+    col = 'greeks'
     my_mongo = CustomizedMongo(url, db, col)
-    trading_date = og.get_trading_dates_all_option('2019-09-26', '2019-09-01')
+    trading_date = og.get_trading_dates_all_option('2019-09-26', '2019-06-11')
     length = len(trading_date)
 
     if drop == 1:
@@ -61,6 +61,13 @@ def initial_data(drop=0):
             print(date, ": finished", 'job left: ', length)
     my_mongo.close()
 
+
+def test():
+    date = dt.date(2015, 4, 9)
+    data = og.get_greeks(date, implied_price=True)
+    print(data)
+
+# test()
 
 initial_data()
 

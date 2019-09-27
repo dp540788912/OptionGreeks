@@ -42,7 +42,6 @@ def get_status(underlying_id, _data, distinct_price, strike_price, option_type):
     :return: option status, for options on the market with exact underlying id
     """
     op_id_list = _data[_data['underlying_order_book_id'] == underlying_id]['order_book_id'].tolist()
-    print(underlying_id)
     args = [distinct_price.loc[underlying_id], op_id_list, strike_price, option_type]
     if underlying_id == '510050.XSHG':
         option_status = stock_options_status(*args)
@@ -98,6 +97,12 @@ def calc_implied_forward_and_risk_free(selected_options, option_price, strike_pr
     float 当前期限期权远期价格,隐含无风险利率（r-q）
 
     """
+    print(select_option)
+    print(option_price)
+    print(strike_price)
+    print(underlying_price)
+    print(time_to_maturity)
+
     implied_forward = 0
     key = 0
     for key in list(selected_options.keys()):
