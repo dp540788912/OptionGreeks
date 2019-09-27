@@ -19,6 +19,7 @@ def cal_risk_free_for_underlying_id(underlying_id, _data, distinct_price, strike
     """
     status = get_status(underlying_id, _data, distinct_price, strike_price, option_type)
     option_data = construct_option_data(time_to_maturity, strike_price, status, option_type)
+    print(option_data)
 
     this_time2mature = option_data['time_to_maturity']
     unique_time = this_time2mature.unique().tolist()
@@ -98,11 +99,6 @@ def calc_implied_forward_and_risk_free(selected_options, option_price, strike_pr
     float 当前期限期权远期价格,隐含无风险利率（r-q）
 
     """
-    print(select_option)
-    print(option_price)
-    print(strike_price)
-    print(underlying_price)
-    print(time_to_maturity)
 
     implied_forward = 0
     key = 0

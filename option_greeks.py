@@ -9,6 +9,7 @@ import timeit
 
 rqdatac.init('rice', 'rice', ('dev', 16010))
 filter_tmp = 'SR|RU|M|CU|510050.XSHG'
+pd.set_option('display.max_columns', 500)
 
 """
     According to closed price, calculate implied volatility, and greeks(delta, gamma, vega, theta, rho) of all the
@@ -18,8 +19,6 @@ filter_tmp = 'SR|RU|M|CU|510050.XSHG'
 """
 
 
-# init
-pd.set_option('display.max_columns', 500)
 def get_basic_information(_date) -> pd.DataFrame:
     """
     :return: pandas dataframe, index[ nan ]: [[], [], .... ]
@@ -141,11 +140,12 @@ def get_forward_risk_rate(_data, distinct_price, strike_price, option_type, time
 
 def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     """
-    :param implied_forward: indicator
+    :param implied_price: indicator
     :param options_on_market_info: DataFrame, options on market
     :param _date: exact_date
-    :return: dataFreme , all the greeks
+    :return: dataFrame , all the greeks
     """
+
     if options_on_market_info.empty:
         return None
     # Get components needed for calculation
@@ -162,8 +162,8 @@ def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     # get underlying_price
     try:
         udp_series, distinct_price = get_underlying_price(options_on_market_info, _date)
-    except:
-        return None
+    except AttributeError:
+        raise AttributeError('can\'t get information on that day, please retry')
     # get type series
     type_series = get_type(options_on_market_info)
 
