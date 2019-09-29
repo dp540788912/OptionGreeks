@@ -63,7 +63,7 @@ def initial_data(drop=0):
 
 
 def test():
-    date = dt.date(2019, 6, 11)
+    date = dt.date(2019, 6, 14)
     data = og.get_greeks(date, implied_price=True)
     print(data)
 
