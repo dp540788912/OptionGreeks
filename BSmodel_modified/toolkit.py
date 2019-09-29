@@ -103,9 +103,6 @@ def calc_implied_forward_and_risk_free(selected_options, option_price, strike_pr
     float 当前期限期权远期价格,隐含无风险利率（r-q）
 
     """
-    if option_price is None:
-        print("mother fucker")
-
     implied_forward = 0
     key = 0
     for key in list(selected_options.keys()):

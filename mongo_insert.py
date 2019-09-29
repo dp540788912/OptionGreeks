@@ -51,8 +51,9 @@ def initial_data(drop=0):
     db = 'option'
     col = 'greeks'
     my_mongo = CustomizedMongo(url, db, col)
-    # trading_date = og.get_trading_dates_all_option('2019-06-10')
-    trading_date = og.get_trading_dates_all_option('2019-09-26', '2018-10-31')
+    trading_date = og.get_trading_dates_all_option('2019-06-10')
+    trading_date += og.get_trading_dates_all_option('2019-09-28', '2019-06-12')
+    trading_date.reverse()
     length = len(trading_date)
 
     if drop == 1:
@@ -60,7 +61,7 @@ def initial_data(drop=0):
     else:
         for date in trading_date:
             length -= 1
-            data = og.get_greeks(date, sc_only=False, implied_price=True)
+            data = og.get_greeks(date, sc_only=False, implied_price=False)
             my_mongo.insert(data)
             print(date, ": finished", 'job left: ', length)
     my_mongo.close()
@@ -68,6 +69,5 @@ def initial_data(drop=0):
 
 if __name__ == '__main__':
     initial_data()
-
 
 
