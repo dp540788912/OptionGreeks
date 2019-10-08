@@ -177,7 +177,7 @@ def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     names = merge_data.columns.values.tolist()
     para = [merge_data[x] for x in names]
     # get volatility
-    vol_series = get_implied_volatility(*para)
+    vol_series = get_implied_volatility(*para).rename('iv')
     # Calculate Geeks
     delta = get_delta(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('delta')
     gamma = get_gamma(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series).rename('gamma')
@@ -185,7 +185,7 @@ def get_all_para_ready(options_on_market_info, _date, implied_price=False):
     vega = get_vega(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series).rename('vega')
     rho = get_rho(udp_series, sp_series, rf_series, dd_series, vol_series, ttm_series, type_series).rename('rho')
     # Merge
-    pd_data = pd.concat([delta, gamma, theta, vega, rho], axis=1)
+    pd_data = pd.concat([vol_series, delta, gamma, theta, vega, rho], axis=1)
     # multi-index
     date_array = [_date for x in range(len(pd_data.index))]
     mul_index = pd.MultiIndex.from_arrays([pd_data.index.tolist(), date_array], names=('order_book_id', 'trading_date'))
@@ -218,7 +218,7 @@ def check_runtime(_func):
     """
     def decorator(*args, **kwargs):
         start = timeit.default_timer()
-        _func()
+        _func(*args, **kwargs)
         stop = timeit.default_timer()
         print('Time: ', stop - start)
     return decorator
@@ -227,7 +227,7 @@ def check_runtime(_func):
 @ check_runtime
 def test_func():
     q_date = dt.datetime(2019, 9, 26).date()
-    print(get_greeks(q_date, sc_only=True, implied_price=True))
+    print(get_greeks(q_date, sc_only=False, implied_price=True))
 
 
 # test_func()

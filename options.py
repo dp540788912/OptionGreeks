@@ -32,7 +32,6 @@ def get_greeks(order_book_ids, start_date, end_date, implied_price=True):
     result = my_mongo.find(query)
     df = pd.DataFrame(result)
     df = df.set_index(['order_book_id', 'trading_date'], inplace=True)
-    print(df)
 
 
 get_greeks(['10001697', '10001698'], '2019-06-21', '2019-09-20')
