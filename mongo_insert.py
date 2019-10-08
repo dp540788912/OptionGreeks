@@ -34,21 +34,25 @@ class CustomizedMongo:
         _data['trading_date'] = _data['trading_date'].apply(lambda x: x.strftime("%Y-%m-%d"))
         try:
             self._col.insert_many(_data.T.to_dict().values())
-        except:
-            return False
+        except ConnectionError:
+            raise ConnectionError('Connection failed')
         return True
 
     def drop(self):
         self._col.drop()
 
+    def find(self, query):
+        return self._col.find(query)
 
+# FIXME: 2019-06-11, all price data is missing
 @ og.check_runtime
 def initial_data(drop=0):
-    url = 'mongodb://root:root@192.168.10.30:27017/option?authSource=admin'
+    url = 'mongodb://root:root@192.168.10.30:27017/options.py?authSource=admin'
     db = 'option'
     col = 'greeks'
     my_mongo = CustomizedMongo(url, db, col)
-    trading_date = og.get_trading_dates_all_option('2019-09-26', '2019-06-11')
+    # trading_date = og.get_trading_dates_all_option('2019-06-10')
+    trading_date = og.get_trading_dates_all_option('2019-09-26', '2018-10-31')
     length = len(trading_date)
 
     if drop == 1:
@@ -56,18 +60,14 @@ def initial_data(drop=0):
     else:
         for date in trading_date:
             length -= 1
-            data = og.get_greeks(date, implied_price=True)
+            data = og.get_greeks(date, sc_only=False, implied_price=True)
             my_mongo.insert(data)
             print(date, ": finished", 'job left: ', length)
     my_mongo.close()
 
 
-def test():
-    date = dt.date(2019, 6, 14)
-    data = og.get_greeks(date, implied_price=True)
-    print(data)
-
-test()
+if __name__ == '__main__':
+    initial_data()
 
 
 
