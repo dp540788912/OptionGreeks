@@ -97,7 +97,7 @@ def get_underlying_price(_partial, _date) -> (pd.Series, pd.Series):
     distinct_id = under_id_list.drop_duplicates()
     distinct_price = rqdatac.get_price(distinct_id.tolist(), _date, _date, expect_df=True)
     if distinct_price is None:
-        raise Exception("the date is not a trading date")
+        raise ValueError("the date is not a trading date")
     else:
         distinct_price = distinct_price['close'].reset_index(level=1, drop=True)
     # [index = underlying id]: [price] series
@@ -203,10 +203,13 @@ def get_greeks(_date, sc_only=True, implied_price=False):
     :return: a data frame: index[ id, date ] : columns[delta, gamma, theta, vega, rho]
     """
     all_data = get_basic_information(_date)
-    if sc_only:
-        all_data = all_data[all_data['underlying_symbol'] == '510050.XSHG']
-    else:
-        all_data = all_data[all_data['underlying_symbol'] != '510050.XSHG']
+
+    if type(sc_only) is bool:
+        if sc_only:
+            all_data = all_data[all_data['underlying_symbol'] == '510050.XSHG']
+        else:
+            all_data = all_data[all_data['underlying_symbol'] != '510050.XSHG']
+
     return get_all_para_ready(all_data, _date, implied_price)
 
 
