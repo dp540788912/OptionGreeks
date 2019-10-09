@@ -1,9 +1,7 @@
 
 import pymongo
-import pandas as pd
 import datetime as dt
-import option_greeks as og
-import rqdatac
+from OptionGreeks import option_greeks as og
 
 
 class CustomizedMongo:
@@ -97,8 +95,10 @@ def update_mongo_1(implied):
         print('today\'s data is not reachable yet')
 
 
-def get_work():
+def get_work(*arg):
     update_mongo_1(True)
     update_mongo_1(False)
 
+
+get_work()
 
