@@ -5,6 +5,7 @@ import rqdatac
 import pandas as pd
 import datetime as dt
 from rqanalysis.risk import get_risk_free_rate
+import warnings
 import timeit
 
 rqdatac.init('rice', 'rice', ('dev', 16010))
@@ -65,7 +66,12 @@ def get_risk_free_series(_date, order_id) -> pd.Series:
     :param order_id: list of ids
     :return: pandas series, index: option_id, value: risk_free_rate
     """
-    rate = get_risk_free_rate(_date, _date)
+    rate = []
+    try:
+        rate = get_risk_free_rate(_date, _date)
+    except TypeError:
+        warnings.warn('today\'s data is not ready')
+
     return pd.Series(rate, index=order_id, name='rf_series')
 
 

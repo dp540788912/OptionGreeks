@@ -29,11 +29,12 @@ class CustomizedMongo:
         if _data is None:
             return False
         _data = _data.reset_index()
-        _data['trading_date'] = _data['trading_date': '1'].apply(lambda x: x.strftime("%Y-%m-%d"))
+        _data['trading_date'] = _data['trading_date'].apply(lambda x: x.strftime("%Y-%m-%d"))
         try:
             self._col.insert_many(_data.T.to_dict().values())
         except ConnectionError:
             raise ConnectionError('Connection failed')
+        print('work done')
         return True
 
     def drop(self):
@@ -70,7 +71,7 @@ def Data_processing(_my_mongo, _trading_dates, implied_price, drop=0):
         for date in _trading_dates:
             length -= 1
             data = og.get_greeks(date, sc_only='init', implied_price=implied_price)
-            # _my_mongo.insert(data)
+            _my_mongo.insert(data)
             print(data)
             print(date, ": finished", 'job left: ', length)
 
@@ -100,3 +101,5 @@ def get_work(*arg):
     update_mongo_1(False)
 
 
+if __name__ == '__main__':
+    get_work()
