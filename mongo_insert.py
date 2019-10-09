@@ -102,3 +102,4 @@ def get_work():
     update_mongo_1(False)
 
 
+get_work()

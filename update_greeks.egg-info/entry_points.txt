@@ -1,0 +1,3 @@
+[console_scripts]
+update-greeks = __main__:cli
+

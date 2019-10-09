@@ -1,0 +1,8 @@
+README.md
+setup.py
+update_greeks.egg-info/PKG-INFO
+update_greeks.egg-info/SOURCES.txt
+update_greeks.egg-info/dependency_links.txt
+update_greeks.egg-info/entry_points.txt
+update_greeks.egg-info/requires.txt
+update_greeks.egg-info/top_level.txt
