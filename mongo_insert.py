@@ -31,7 +31,7 @@ class CustomizedMongo:
         if _data is None:
             return False
         _data = _data.reset_index()
-        _data['trading_date'] = _data['trading_date'].apply(lambda x: x.strftime("%Y-%m-%d"))
+        _data['trading_date'] = _data['trading_date': '1'].apply(lambda x: x.strftime("%Y-%m-%d"))
         try:
             self._col.insert_many(_data.T.to_dict().values())
         except ConnectionError:
@@ -43,6 +43,9 @@ class CustomizedMongo:
 
     def find(self, query):
         return self._col.find(query)
+
+    def find_max(self, key, limit=1):
+        return self._col.find().sort([(key, pymongo.DESCENDING)]).limit(limit)
 
 # FIXME: 2019-06-11, all price data is missing
 @ og.check_runtime
@@ -56,18 +59,46 @@ def initial_data(drop=0):
     trading_date.reverse()
     length = len(trading_date)
 
-    if drop == 1:
-        my_mongo.drop()
-    else:
-        for date in trading_date:
-            length -= 1
-            data = og.get_greeks(date, sc_only=False, implied_price=False)
-            my_mongo.insert(data)
-            print(date, ": finished", 'job left: ', length)
+    Data_processing(my_mongo, trading_date)
     my_mongo.close()
 
 
-if __name__ == '__main__':
-    initial_data()
+@ og.check_runtime
+def Data_processing(_my_mongo, _trading_dates, implied_price, drop=0):
+    length = len(_trading_dates)
+    if drop == 1:
+        _my_mongo.drop()
+    else:
+        for date in _trading_dates:
+            length -= 1
+            data = og.get_greeks(date, sc_only='init', implied_price=implied_price)
+            # _my_mongo.insert(data)
+            print(data)
+            print(date, ": finished", 'job left: ', length)
+
+
+def update_mongo_1(implied):
+    url = 'mongodb://root:root@192.168.10.30:27017/options.py?authSource=admin'
+    db = 'option'
+    if implied:
+        col = 'greeks_implied_forward'
+    else:
+        col = 'greeks'
+    key = 'trading_date'
+    my_mongo = CustomizedMongo(url, db, col)
+    _max = my_mongo.find_max(key)
+    newest_date = next(_max)['trading_date']
+    newest_date = dt.datetime.strptime(newest_date, '%Y-%m-%d').date()
+
+    trading_date = og.get_trading_dates_all_option(dt.datetime.now().date(), newest_date + dt.timedelta(days=1))
+    try:
+        Data_processing(my_mongo, trading_date, implied)
+    except ValueError:
+        print('today\'s data is not reachable yet')
+
+
+def get_work():
+    update_mongo_1(True)
+    update_mongo_1(False)
 
 
