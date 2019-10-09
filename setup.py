@@ -1,21 +1,23 @@
+# -*- coding: utf-8 -*-
 import sys
-from setuptools import setup
+from setuptools import setup, find_packages
 
-
-def read_file(file):
-    with open(file, "rt") as f:
-        return f.readlines()
-
-
-requires = read_file('requirements.txt')
-print(requires)
 
 setup(
     name="updateGreeks",
     version='1.0',
     description="daily schedule for update",
+    packages=find_packages(),
     python_requires='>=3.6',
-    install_requires=requires,
+    install_requires=[
+        'pandas',
+        'numpy',
+        'pymongo',
+        'setuptools',
+        'click',
+        'rqdatac',
+        'rqanalysis',
+    ],
     entry_points={"console_scripts": ["updateGreeks=OptionGreeks.__main__:cli"]},
 )
 

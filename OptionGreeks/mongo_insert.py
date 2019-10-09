@@ -1,4 +1,4 @@
-
+# -*- coding: utf-8 -*-
 import pymongo
 import datetime as dt
 from OptionGreeks import option_greeks as og
@@ -99,6 +99,4 @@ def get_work(*arg):
     update_mongo_1(True)
     update_mongo_1(False)
 
-
-get_work()
 
