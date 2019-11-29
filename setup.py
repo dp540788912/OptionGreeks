@@ -1,20 +1,23 @@
+# -*- coding: utf-8 -*-
 import sys
-from setuptools import setup
-
-assert sys.version_info >= (3, 6, 0)
-
-
-def read_file(file):
-    with open(file, "rt") as f:
-        return f.read()
+from setuptools import setup, find_packages
 
 
 setup(
-    name="update greeks",
-    version='1.0',
+    name="update_greeks",
+    version='3.1',
     description="daily schedule for update",
-    author='GuangXingLi',
+    packages=find_packages(),
     python_requires='>=3.6',
-    entry_points={"console_scripts": ["update-greeks = __main__:cli"]},
+    install_requires=[
+        'pandas',
+        'numpy',
+        'pymongo',
+        'setuptools',
+        'click',
+        'rqdatac',
+        'rqanalysis', 'scipy', 'h5py'
+    ],
+    entry_points={"console_scripts": ["update-greeks=option_greeks.__main__:cli"]},
 )
 
